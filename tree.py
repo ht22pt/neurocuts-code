@@ -249,6 +249,7 @@ class Node:
             partition_state = [0] * 70
             partition_state[self.manual_partition] = 1
             state.extend(partition_state)
+
         return np.array(state)
 
     def __str__(self):
@@ -312,7 +313,7 @@ class Tree:
         return self.current_node
 
     def is_leaf(self, node):
-        return len(node.rules) <= self.leaf_threshold
+        return node.rules is not None and len(node.rules) <= self.leaf_threshold
 
     def is_finish(self):
         return len(self.nodes_to_cut) == 0
@@ -333,6 +334,7 @@ class Tree:
         self.nodes_to_cut.pop()
         self.nodes_to_cut.extend(children)
         self.current_node = self.nodes_to_cut[-1]
+        node.rules = None
 
     def partition_cutsplit(self):
         assert self.current_node is self.root

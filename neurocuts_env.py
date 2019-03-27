@@ -10,7 +10,6 @@ from ray.rllib.env import MultiAgentEnv
 from tree import Tree, load_rules_from_file
 from hicuts import HiCuts
 
-NUM_DIMENSIONS = 5
 NUM_PART_LEVELS = 6  # 2%, 4%, 8%, 16%, 32%, 64%
 
 
@@ -33,8 +32,12 @@ class NeuroCutsEnv(MultiAgentEnv):
                  reward_shape="linear",
                  depth_weight=1.0,
                  dump_dir=None,
-                 zero_obs=False):
+                 zero_obs=False,
+                 num_dimensions=5,
+                 rtree=False):
 
+        self.num_dimensions = num_dimensions
+        self.rtree = rtree
         self.reward_shape = {
             "linear": lambda x: x,
             "log": lambda x: np.log(x),
@@ -73,14 +76,14 @@ class NeuroCutsEnv(MultiAgentEnv):
         else:
             self.num_part_levels = 0
         self.action_space = Tuple([
-            Discrete(NUM_DIMENSIONS),
+            Discrete(self.num_dimensions),
             Discrete(max_cuts_per_dimension + self.num_part_levels)
         ])
         self.observation_space = Dict({
             "real_obs": Box(0, 1, (278, ), dtype=np.float32),
             "action_mask": Box(
                 0,
-                1, (NUM_DIMENSIONS + max_cuts_per_dimension +
+                1, (self.num_dimensions + max_cuts_per_dimension +
                     self.num_part_levels, ),
                 dtype=np.float32),
         })
@@ -88,16 +91,21 @@ class NeuroCutsEnv(MultiAgentEnv):
     def reset(self):
         self.num_actions = 0
         self.exceeded_max_depth = []
-        self.tree = Tree(
-            self.rules,
-            self.leaf_threshold,
-            refinements={
-                "node_merging": True,
-                "rule_overlay": True,
-                "region_compaction": False,
-                "rule_pushup": False,
-                "equi_dense": False,
-            })
+        if self.rtree:
+            self.tree = RTree(
+                    self.rules,
+                    self.leaf_threshold)
+        else:
+            self.tree = Tree(
+                self.rules,
+                self.leaf_threshold,
+                refinements={
+                    "node_merging": True,
+                    "rule_overlay": True,
+                    "region_compaction": False,
+                    "rule_pushup": False,
+                    "equi_dense": False,
+                })
         self.node_map = {
             self.tree.root.id: self.tree.root,
         }
@@ -278,11 +286,11 @@ class NeuroCutsEnv(MultiAgentEnv):
 
     def _encode_state(self, node):
         if node.depth > 1:
-            action_mask = ([1] * (NUM_DIMENSIONS + self.max_cuts_per_dimension)
+            action_mask = ([1] * (self.num_dimensions + self.max_cuts_per_dimension)
                            + [0] * self.num_part_levels)
         else:
             assert node.depth == 1, node.depth
-            action_mask = ([1] * (NUM_DIMENSIONS + self.max_cuts_per_dimension)
+            action_mask = ([1] * (self.num_dimensions + self.max_cuts_per_dimension)
                            + [1] * self.num_part_levels)
         s = node.get_state()
         return {

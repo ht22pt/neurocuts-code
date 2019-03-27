@@ -29,7 +29,7 @@ parser.add_argument("--rules",
 parser.add_argument(
     "--dump-dir",
     type=str,
-    default="/tmp/neurocuts_out",
+    default="/tmp/trees",
     help="Dump valid trees to this directory for later inspection.")
 
 parser.add_argument(
@@ -132,6 +132,7 @@ if __name__ == "__main__":
                 "train_batch_size": 1000 if args.fast else 15000,
                 "batch_mode": "complete_episodes",
                 "observation_filter": "NoFilter",
+                "num_envs_per_worker": 8,
                 "model": {
                     "custom_model": "mask",
                     "fcnet_hiddens": [512, 512],

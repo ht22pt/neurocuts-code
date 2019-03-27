@@ -3,6 +3,7 @@ import random
 import numpy as np
 import re
 import sys
+from ruleset import RuleSet
 
 sys.setrecursionlimit(99999)
 SPLIT_CACHE = {}
@@ -54,7 +55,7 @@ class Rule:
     def is_covered_by(self, other, ranges):
         for i in range(5):
             if (max(self.ranges[i*2], ranges[i*2]) < \
-                    max(other.ranges[i*2], ranges[i*2]))or \
+                    max(other.ranges[i*2], ranges[i*2])) or \
                     (min(self.ranges[i*2+1], ranges[i*2+1]) > \
                     min(other.ranges[i*2+1], ranges[i*2+1])):
                 return False
@@ -137,7 +138,7 @@ class Node:
         self.partitions = list(partitions or [])
         self.manual_partition = manual_partition
         self.ranges = ranges
-        self.rules = rules
+        self.rules = RuleSet(rules) if isinstance(rules, list) else rules
         self.depth = depth
         self.children = []
         self.action = None
@@ -203,20 +204,7 @@ class Node:
         return max(len(c.rules) for c in self.children) == len(self.rules)
 
     def pruned_rules(self):
-        new_rules = []
-        for i in range(len(self.rules) - 1):
-            rule = self.rules[len(self.rules) - 1 - i]
-            flag = False
-            for j in range(0, len(self.rules) - 1 - i):
-                high_priority_rule = self.rules[j]
-                if rule.is_covered_by(high_priority_rule, self.ranges):
-                    flag = True
-                    break
-            if not flag:
-                new_rules.append(rule)
-        new_rules.append(self.rules[0])
-        new_rules.reverse()
-        return new_rules
+        return self.rules.prune(self.ranges)
 
     def get_state(self):
         state = []
@@ -261,6 +249,7 @@ class Node:
             partition_state = [0] * 70
             partition_state[self.manual_partition] = 1
             state.extend(partition_state)
+
         return np.array(state)
 
     def __str__(self):
@@ -294,7 +283,7 @@ class Tree:
         self.leaf_threshold = leaf_threshold
         self.refinements = refinements
 
-        self.rules = rules
+        self.rules = RuleSet(rules) if isinstance(rules, list) else rules
         self.root = self.create_node(
             0, [0, 2**32, 0, 2**32, 0, 2**16, 0, 2**16, 0, 2**8], rules, 1,
             None, None)
@@ -324,7 +313,7 @@ class Tree:
         return self.current_node
 
     def is_leaf(self, node):
-        return len(node.rules) <= self.leaf_threshold
+        return node.rules is not None and len(node.rules) <= self.leaf_threshold
 
     def is_finish(self):
         return len(self.nodes_to_cut) == 0
@@ -345,6 +334,7 @@ class Tree:
         self.nodes_to_cut.pop()
         self.nodes_to_cut.extend(children)
         self.current_node = self.nodes_to_cut[-1]
+        node.rules = None
 
     def partition_cutsplit(self):
         assert self.current_node is self.root
@@ -436,12 +426,10 @@ class Tree:
             child_ranges[cut_dimension * 2 + 1] = min(
                 range_right, range_left + (i + 1) * range_per_cut)
 
-            child_rules = []
-            for rule in node.rules:
-                if rule.is_intersect(cut_dimension,
-                                     child_ranges[cut_dimension * 2],
-                                     child_ranges[cut_dimension * 2 + 1]):
-                    child_rules.append(rule)
+            child_rules = node.rules.intersect(
+                    cut_dimension,
+                    child_ranges[cut_dimension * 2],
+                    child_ranges[cut_dimension * 2 + 1])
 
             child = self.create_node(self.node_count, child_ranges,
                                      child_rules, node.depth + 1,
@@ -523,12 +511,10 @@ class Tree:
             child_ranges[cut_dimension * 2 + 1] = min(
                 range_right, range_left + (i + 1) * range_per_cut)
 
-            child_rules = []
-            for rule in node.rules:
-                if rule.is_intersect(cut_dimension,
-                                     child_ranges[cut_dimension * 2],
-                                     child_ranges[cut_dimension * 2 + 1]):
-                    child_rules.append(rule)
+            child_rules = node.rules.intersect(
+                    cut_dimension,
+                    child_ranges[cut_dimension * 2],
+                    child_ranges[cut_dimension * 2 + 1])
 
             child = self.create_node(self.node_count, child_ranges,
                                      child_rules, node.depth + 1,
@@ -576,7 +562,7 @@ class Tree:
             last_node = nodes[0]
             for i in range(1, len(nodes)):
                 if self.check_contiguous_region(last_node, nodes[i]):
-                    if set(last_node.rules) == set(nodes[i].rules):
+                    if last_node.rules == nodes[i].rules:
                         self.merge_region(last_node, nodes[i])
                         flag = False
                         continue
@@ -593,7 +579,8 @@ class Tree:
     def refinement_rule_overlay(self, node):
         if len(node.rules) == 0 or len(node.rules) > 500:
             return
-        node.rules = node.pruned_rules()
+        if not self.is_leaf(node):
+            node.rules = node.pruned_rules()
 
     def refinement_region_compaction(self, node):
         if len(node.rules) == 0:

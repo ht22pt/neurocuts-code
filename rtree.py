@@ -9,6 +9,16 @@ class Node:
     def get_state(self):
         return [len(self.points)] + self.ranges
 
+def load_points_from_file(file_name):
+    points = []
+    with open(file_name) as f:
+        next(f)
+        for line in f:
+            line_split = line.split(';')
+            point = float(line_split[3]), float(line_split[4])
+            points.append(point)
+    return points
+
 class RTree:
     def __init__(self, points, leaf_threshold):
         self.points = points
